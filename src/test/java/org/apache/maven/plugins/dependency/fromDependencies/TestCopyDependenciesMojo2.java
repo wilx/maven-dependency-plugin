@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Set;
 
 import org.apache.maven.api.plugin.testing.InjectMojo;
@@ -56,6 +57,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 @MojoTest(realRepositorySession = true)
@@ -281,6 +285,35 @@ class TestCopyDependenciesMojo2 {
                 assertArtifactExists(baseArtifact, targetRepository);
             }
         }
+    }
+
+    @Test
+    @InjectMojo(goal = "copy-dependencies")
+    void testRepositoryLayoutCopiesPomForSkippedArtifact(CopyDependenciesMojo mojo) throws Exception {
+        ProjectBuildingRequest pbr = new DefaultProjectBuildingRequest();
+        pbr.setRepositorySession(session.getRepositorySession());
+        when(session.getProjectBuildingRequest()).thenReturn(pbr);
+
+        Artifact artifact = stubFactory.createArtifact("org.example", "artifact", "1.0", Artifact.SCOPE_COMPILE);
+        Artifact pomArtifact =
+                stubFactory.createArtifact("org.example", "artifact", "1.0", Artifact.SCOPE_COMPILE, "pom", null);
+        Set<Artifact> artifacts = new HashSet<>();
+        artifacts.add(artifact);
+        mojo.getProject().setArtifacts(artifacts);
+
+        CopyDependenciesMojo mojoSpy = spy(mojo);
+        doReturn(pomArtifact).when(mojoSpy).getResolvedPomArtifact(any(Artifact.class));
+        mojoSpy.useRepositoryLayout = true;
+        mojoSpy.setCopyPom(true);
+
+        File artifactDestination = new File(mojoSpy.outputDirectory, "org/example/artifact/1.0/artifact-1.0.jar");
+        Files.createDirectories(artifactDestination.getParentFile().toPath());
+        Files.write(artifactDestination.toPath(), new byte[0]);
+
+        mojoSpy.execute();
+
+        File pomDestination = new File(mojoSpy.outputDirectory, "org/example/artifact/1.0/artifact-1.0.pom");
+        assertTrue(pomDestination.isFile());
     }
 
     private Artifact createExpandedVersionArtifact(

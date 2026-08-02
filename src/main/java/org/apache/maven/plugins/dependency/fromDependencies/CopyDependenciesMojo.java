@@ -44,6 +44,7 @@ import org.apache.maven.plugins.dependency.utils.filters.DestFileFilter;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectBuilder;
 import org.apache.maven.project.ProjectBuildingRequest;
+import org.apache.maven.shared.artifact.filter.collection.ArtifactFilterException;
 import org.apache.maven.shared.artifact.filter.collection.ArtifactsFilter;
 import org.apache.maven.shared.transfer.artifact.install.ArtifactInstaller;
 import org.apache.maven.shared.transfer.artifact.install.ArtifactInstallerException;
@@ -162,6 +163,10 @@ public class CopyDependenciesMojo extends AbstractFromDependenciesMojo {
                     repositoryManager.setLocalRepositoryBasedir(session.getProjectBuildingRequest(), outputDirectory);
 
             artifacts.forEach(artifact -> installArtifact(artifact, buildingRequest));
+            if (isCopyPom()) {
+                dss.getSkippedDependencies()
+                        .forEach(artifact -> installPomArtifactIfRequired(artifact, buildingRequest));
+            }
         }
 
         Set<Artifact> skippedArtifacts = dss.getSkippedDependencies();
@@ -195,6 +200,28 @@ public class CopyDependenciesMojo extends AbstractFromDependenciesMojo {
             }
         } catch (ArtifactInstallerException e) {
             getLog().warn("unable to install " + artifact, e);
+        }
+    }
+
+    private void installPomArtifactIfRequired(Artifact artifact, ProjectBuildingRequest buildingRequest) {
+        if ("pom".equals(artifact.getType())) {
+            return;
+        }
+
+        Artifact pomArtifact = getResolvedPomArtifact(artifact);
+        if (pomArtifact != null
+                && pomArtifact.getFile() != null
+                && pomArtifact.getFile().exists()) {
+            try {
+                if (!getMarkedArtifactFilter()
+                        .filter(Collections.singleton(pomArtifact))
+                        .isEmpty()) {
+                    installer.install(buildingRequest, Collections.singletonList(pomArtifact));
+                    installBaseSnapshot(pomArtifact, buildingRequest);
+                }
+            } catch (ArtifactFilterException | ArtifactInstallerException e) {
+                getLog().warn("unable to install POM for " + artifact, e);
+            }
         }
     }
 
